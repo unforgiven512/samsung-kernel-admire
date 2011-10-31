@@ -14,7 +14,7 @@ usage() {
 	exit 1
 }
 
-scm_only=false
+stm_only=false
 srctree=.
 if test "$1" = "--save-scmversion"; then
 	scm_only=true
@@ -162,7 +162,7 @@ if test "$CONFIG_LOCALVERSION_AUTO" = "y"; then
 else
 	# apped a plus sign if the repository is not in a clean tagged
 	# state and  LOCALVERSION= is not specified
-	if test "${LOCALVERSION+set}" != "set"; then
+	if test "${LOCALVERSION}" = ""; then
 		scm=$(scm_version --short)
 		res="$res${scm:++}"
 	fi

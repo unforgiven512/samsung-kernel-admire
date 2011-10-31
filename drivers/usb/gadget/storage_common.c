@@ -269,6 +269,7 @@ struct fsg_lun {
 	unsigned int	prevent_medium_removal:1;
 	unsigned int	registered:1;
 	unsigned int	info_valid:1;
+	unsigned int	nofua:1;
 
 	u32		sense_data;
 	u32		sense_data_info;
@@ -289,8 +290,13 @@ static struct fsg_lun *fsg_lun_from_dev(struct device *dev)
 #define EP0_BUFSIZE	256
 #define DELAYED_STATUS	(EP0_BUFSIZE + 999)	/* An impossibly large value */
 
-/* Number of buffers we will use.  2 is enough for double-buffering */
-#define FSG_NUM_BUFFERS	2
+/* Number of buffers for CBW, DATA and CSW */
+#ifdef CONFIG_USB_CSW_HACK
+#define FSG_NUM_BUFFERS    4
+#else
+#define FSG_NUM_BUFFERS    2
+#endif
+
 
 /* Default size of buffer length. */
 #define FSG_BUFLEN	((u32)16384)
@@ -689,6 +695,14 @@ static ssize_t fsg_show_ro(struct device *dev, struct device_attribute *attr,
 				  : curlun->initially_ro);
 }
 
+static ssize_t fsg_show_nofua(struct device *dev, struct device_attribute *attr,
+				char *buf)
+{
+	struct fsg_lun  *curlun = fsg_lun_from_dev(dev);
+
+	return sprintf(buf, "%u\n", curlun->nofua);
+}
+
 static ssize_t fsg_show_file(struct device *dev, struct device_attribute *attr,
 			     char *buf)
 {
@@ -743,6 +757,23 @@ static ssize_t fsg_store_ro(struct device *dev, struct device_attribute *attr,
 	return rc;
 }
 
+static ssize_t fsg_store_nofua(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct fsg_lun  *curlun = fsg_lun_from_dev(dev);
+
+	if (strict_strtoul(buf, 2, &fsg_nofua))
+		return -EINVAL;
+
+	/* Sync data when switching from async mode to sync */
+	if (!fsg_nofua && curlun->nofua)
+		fsg_lun_fsync_sub(curlun);
+	curlun->nofua = fsg_nofua;
+
+	return count;
+}
+
 static ssize_t fsg_store_file(struct device *dev, struct device_attribute *attr,
 			      const char *buf, size_t count)
 {
@@ -750,10 +781,16 @@ static ssize_t fsg_store_file(struct device *dev, struct device_attribute *attr,
 	struct rw_semaphore	*filesem = dev_get_drvdata(dev);
 	int		rc = 0;
 
+
+#ifndef CONFIG_USB_ANDROID_MASS_STORAGE
+	/* disabled in android because we need to allow closing the backing file
+	 * if the media was removed
+	 */
 	if (curlun->prevent_medium_removal && fsg_lun_is_open(curlun)) {
 		LDBG(curlun, "eject attempt prevented\n");
 		return -EBUSY;				/* "Door is locked" */
 	}
+#endif
 
 	/* Remove a trailing newline */
 	if (count > 0 && buf[count-1] == '\n')

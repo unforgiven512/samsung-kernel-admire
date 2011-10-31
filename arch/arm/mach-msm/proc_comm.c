@@ -1,6 +1,7 @@
 /* arch/arm/mach-msm/proc_comm.c
  *
  * Copyright (C) 2007-2008 Google, Inc.
+ * Copyright (c) 2009-2010, Code Aurora Forum. All rights reserved.
  * Author: Brian Swetland <swetland@google.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -18,23 +19,24 @@
 #include <linux/errno.h>
 #include <linux/io.h>
 #include <linux/spinlock.h>
+#include <linux/module.h>
 #include <mach/msm_iomap.h>
 #include <mach/system.h>
 
 #include "proc_comm.h"
+#include "smd_private.h"
 
-static inline void msm_a2m_int(uint32_t irq)
-{
 #if defined(CONFIG_ARCH_MSM7X30)
-	writel(1 << irq, MSM_GCC_BASE + 0x8);
+#define MSM_TRIG_A2M_PC_INT (writel(1 << 6, MSM_GCC_BASE + 0x8))
+#elif defined(CONFIG_ARCH_MSM8X60)
+#define MSM_TRIG_A2M_PC_INT (writel(1 << 5, MSM_GCC_BASE + 0x8))
 #else
-	writel(1, MSM_CSR_BASE + 0x400 + (irq * 4));
+#define MSM_TRIG_A2M_PC_INT (writel(1, MSM_CSR_BASE + 0x400 + (6) * 4))
 #endif
-}
 
 static inline void notify_other_proc_comm(void)
 {
-	msm_a2m_int(6);
+	MSM_TRIG_A2M_PC_INT;
 }
 
 #define APP_COMMAND 0x00
@@ -49,82 +51,100 @@ static inline void notify_other_proc_comm(void)
 
 static DEFINE_SPINLOCK(proc_comm_lock);
 
-/* The higher level SMD support will install this to
- * provide a way to check for and handle modem restart.
- */
-int (*msm_check_for_modem_crash)(void);
-
 /* Poll for a state change, checking for possible
  * modem crashes along the way (so we don't wait
- * forever while the ARM9 is blowing up).
+ * forever while the ARM9 is blowing up.
  *
  * Return an error in the event of a modem crash and
  * restart so the msm_proc_comm() routine can restart
  * the operation from the beginning.
  */
-static int proc_comm_wait_for(void __iomem *addr, unsigned value)
+static int proc_comm_wait_for(unsigned addr, unsigned value)
 {
-	for (;;) {
+	while (1) {
 		if (readl(addr) == value)
 			return 0;
 
-		if (msm_check_for_modem_crash)
-			if (msm_check_for_modem_crash())
-				return -EAGAIN;
+		if (smsm_check_for_modem_crash())
+			return -EAGAIN;
+
+		udelay(5);
 	}
 }
 
+#include "smd_private.h" 
+extern samsung_vendor1_id *Quattro_vendor1_id;
+void msm_proc_comm_reset_modem_now(void)
+{
+	unsigned base = (unsigned)MSM_SHARED_RAM_BASE;
+	unsigned long flags;
+
+  {
+    Quattro_vendor1_id->off_charging_off = 0x11;  //bypass long key routine on CP side
+  }
+	spin_lock_irqsave(&proc_comm_lock, flags);
+
+again:
+	if (proc_comm_wait_for(base + MDM_STATUS, PCOM_READY))
+		goto again;
+
+	writel(PCOM_RESET_MODEM, base + APP_COMMAND);
+	writel(0, base + APP_DATA1);
+	writel(0, base + APP_DATA2);
+
+	spin_unlock_irqrestore(&proc_comm_lock, flags);
+
+	/* Make sure the writes complete before notifying the other side */
+	dsb();
+
+	notify_other_proc_comm();
+
+	return;
+}
+EXPORT_SYMBOL(msm_proc_comm_reset_modem_now);
+
 int msm_proc_comm(unsigned cmd, unsigned *data1, unsigned *data2)
 {
-	void __iomem *base = MSM_SHARED_RAM_BASE;
+	unsigned base = (unsigned)MSM_SHARED_RAM_BASE;
 	unsigned long flags;
 	int ret;
 
 	spin_lock_irqsave(&proc_comm_lock, flags);
 
-	for (;;) {
-		if (proc_comm_wait_for(base + MDM_STATUS, PCOM_READY))
-			continue;
+again:
+	if (proc_comm_wait_for(base + MDM_STATUS, PCOM_READY))
+		goto again;
 
-		writel(cmd, base + APP_COMMAND);
-		writel(data1 ? *data1 : 0, base + APP_DATA1);
-		writel(data2 ? *data2 : 0, base + APP_DATA2);
+	writel(cmd, base + APP_COMMAND);
+	writel(data1 ? *data1 : 0, base + APP_DATA1);
+	writel(data2 ? *data2 : 0, base + APP_DATA2);
 
-		notify_other_proc_comm();
+	/* Make sure the writes complete before notifying the other side */
+	dsb();
 
-		if (proc_comm_wait_for(base + APP_COMMAND, PCOM_CMD_DONE))
-			continue;
+	notify_other_proc_comm();
 
-		if (readl(base + APP_STATUS) != PCOM_CMD_FAIL) {
-			if (data1)
-				*data1 = readl(base + APP_DATA1);
-			if (data2)
-				*data2 = readl(base + APP_DATA2);
-			ret = 0;
-		} else {
-			ret = -EIO;
-		}
-		break;
+	if (proc_comm_wait_for(base + APP_COMMAND, PCOM_CMD_DONE))
+		goto again;
+
+	if (readl(base + APP_STATUS) == PCOM_CMD_SUCCESS) {
+		if (data1)
+			*data1 = readl(base + APP_DATA1);
+		if (data2)
+			*data2 = readl(base + APP_DATA2);
+		ret = 0;
+	} else {
+		ret = -EIO;
 	}
+
+    ret = 0;
 
 	writel(PCOM_CMD_IDLE, base + APP_COMMAND);
 
-	spin_unlock_irqrestore(&proc_comm_lock, flags);
+	/* Make sure the writes complete before returning */
+	dsb();
 
+	spin_unlock_irqrestore(&proc_comm_lock, flags);
 	return ret;
 }
-
-/*
- * We need to wait for the ARM9 to at least partially boot
- * up before we can continue. Since the ARM9 does resource
- * allocation, if we dont' wait we could end up crashing or in
- * and unknown state. This function should be called early to
- * wait on the ARM9.
- */
-void __init proc_comm_boot_wait(void)
-{
-	void __iomem *base = MSM_SHARED_RAM_BASE;
- 
-	proc_comm_wait_for(base + MDM_STATUS, PCOM_READY);
- 
-}
+EXPORT_SYMBOL(msm_proc_comm);

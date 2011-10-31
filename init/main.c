@@ -459,10 +459,21 @@ static noinline void __init_refok rest_init(void)
 	cpu_idle();
 }
 
+#if defined (CONFIG_MSM_ARM9_USES_UART3)
+int arm9_uses_uart3=0;
+#endif
 /* Check for early params. */
 static int __init do_early_param(char *param, char *val)
 {
 	struct obs_kernel_param *p;
+
+#if defined (CONFIG_MSM_ARM9_USES_UART3)
+	if ( (strcmp(param, "console") == 0 )
+		&& (( strcmp(val, "NULL") == 0 )
+			|| (strcmp(val, "null") == 0))
+		)
+		arm9_uses_uart3 = 1;
+#endif
 
 	for (p = __setup_start; p < __setup_end; p++) {
 		if ((p->early && strcmp(param, p->str) == 0) ||

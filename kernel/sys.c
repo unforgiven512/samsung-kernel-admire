@@ -47,6 +47,13 @@
 #include <asm/io.h>
 #include <asm/unistd.h>
 
+// hsil
+#include "../arch/arm/mach-msm/smd_private.h"
+#include "../arch/arm/mach-msm/proc_comm.h"
+#include <mach/msm_iomap-7xxx.h>
+#include <mach/msm_iomap.h>
+#include <asm/io.h>
+
 #ifndef SET_UNALIGN_CTL
 # define SET_UNALIGN_CTL(a,b)	(-EINVAL)
 #endif
@@ -365,6 +372,10 @@ static DEFINE_MUTEX(reboot_mutex);
  *
  * reboot doesn't sync: do that yourself before calling this.
  */
+#if 1
+extern void request_suspend_state(suspend_state_t new_state);
+#endif
+
 SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 		void __user *, arg)
 {
@@ -409,7 +420,12 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 		panic("cannot halt");
 
 	case LINUX_REBOOT_CMD_POWER_OFF:
+#if 1
+		// to prevent sleep state during power off sequency	
+		request_suspend_state(PM_SUSPEND_ON);
+#endif
 		kernel_power_off();
+		unlock_kernel();
 		do_exit(0);
 		break;
 

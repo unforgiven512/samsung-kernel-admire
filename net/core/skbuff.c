@@ -303,6 +303,18 @@ struct sk_buff *dev_alloc_skb(unsigned int length)
 }
 EXPORT_SYMBOL(dev_alloc_skb);
 
+// sec_port unsed in /kernel/drivers/net/wireless/broadcom/src/shared/linux_osl.c
+struct sk_buff *dev_alloc_skb_kernel(unsigned int length)
+{
+	/*
+	 * There is more code here than it seems:
+	 * __dev_alloc_skb is an inline
+	 */
+	return __dev_alloc_skb(length, GFP_KERNEL);
+}
+EXPORT_SYMBOL(dev_alloc_skb_kernel);
+
+
 static void skb_drop_list(struct sk_buff **listp)
 {
 	struct sk_buff *list = *listp;

@@ -1,0 +1,19 @@
+#if defined(CONFIG_MACH_QUATTRO)
+#include <Quattro_battery.c>
+#elif defined(CONFIG_MACH_RANT3) 
+#include <Rant3_battery.c>
+#elif defined(CONFIG_MACH_VINO)
+#include <Vino_battery.c>
+#elif defined(CONFIG_MACH_MARZO)
+#include <Marzo_battery.c>
+#elif defined(CONFIG_MACH_REALITY2)
+#include <Reality2_battery.c>
+#elif defined(CONFIG_MACH_ROOKIE)
+#include <Rookie_battery.c>
+#elif defined(CONFIG_MACH_ESCAPE)
+#include <Escape_battery.c>
+#elif defined(CONFIG_MACH_GIO)
+#include <Gio_battery.c>
+#elif defined(CONFIG_MACH_CHIEF)
+#include <Chief_battery.c>
+#endif

@@ -130,7 +130,7 @@ extern void vc_SAK(struct work_struct *work);
 #define CUR_HWMASK	0x0f
 #define CUR_SWMASK	0xfff0
 
-#define CUR_DEFAULT CUR_UNDERLINE
+#define CUR_DEFAULT CUR_NONE // CUR_UNDERLINE // shbae ee03 - remove kernel console cursor
 
 #define CON_IS_VISIBLE(conp) (*conp->vc_display_fg == conp)
 

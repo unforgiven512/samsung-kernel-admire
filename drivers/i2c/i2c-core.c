@@ -341,7 +341,7 @@ struct bus_type i2c_bus_type = {
 	.probe		= i2c_device_probe,
 	.remove		= i2c_device_remove,
 	.shutdown	= i2c_device_shutdown,
-	.pm		= &i2c_device_pm_ops,
+//	.pm		= &i2c_device_pm_ops,	//hsil
 };
 EXPORT_SYMBOL_GPL(i2c_bus_type);
 
@@ -1932,8 +1932,9 @@ static s32 i2c_smbus_xfer_emulated(struct i2c_adapter *adapter, u16 addr,
 		if (msg[num-1].flags & I2C_M_RD)
 			msg[num-1].len++;
 	}
-
+	
 	status = i2c_transfer(adapter, msg, num);
+
 	if (status < 0)
 		return status;
 
