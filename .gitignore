@@ -77,3 +77,6 @@ GTAGS
 *.orig
 *~
 \#*#
+
+# misc
+samsung-kernel-admire.anjuta
