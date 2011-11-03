@@ -1855,8 +1855,15 @@ static int msm_reboot_call
 			unsigned code = simple_strtoul(cmd + 4, 0, 16) & 0xff;
 			restart_reason = 0x6f656d00 | code;
 		} else {
+#if defined(CONFIG_MACH_GIO) || defined(CONFIG_MACH_ROOKIE)  || defined(CONFIG_MACH_ESCAPE)
+			set_recovery_mode_done();
+#endif
 			restart_reason = 0x77665501;
 		}
+	} else {
+#if defined(CONFIG_MACH_GIO) || defined(CONFIG_MACH_ROOKIE)  || defined(CONFIG_MACH_ESCAPE)
+		set_recovery_mode_done();
+#endif
 	}
 	return NOTIFY_DONE;
 }
